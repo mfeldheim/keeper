@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agberohq/keeper"
+	"github.com/olekukonko/zero"
 )
 
 // unlock handles POST /keeper/unlock.
@@ -25,7 +26,7 @@ func (h *handler) unlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pass, ok := extractFieldBytes(r, "passphrase")
+	pass, ok := extractFieldBytes(r, w, "passphrase")
 	if !ok || len(pass) == 0 {
 		h.enc(w, RouteUnlock, http.StatusBadRequest, errData("passphrase required"))
 		return
@@ -227,7 +228,7 @@ func (h *handler) rotate(w http.ResponseWriter, r *http.Request) {
 	if !h.guardRequest(w, r, RouteRotate) {
 		return
 	}
-	pass, ok := extractFieldBytes(r, "new_passphrase")
+	pass, ok := extractFieldBytes(r, w, "new_passphrase")
 	if !ok || len(pass) == 0 {
 		h.enc(w, RouteRotate, http.StatusBadRequest, errData("new_passphrase required"))
 		return
@@ -249,7 +250,7 @@ func (h *handler) rotateSalt(w http.ResponseWriter, r *http.Request) {
 	if !h.guardRequest(w, r, RouteRotateSalt) {
 		return
 	}
-	pass, ok := extractFieldBytes(r, "passphrase")
+	pass, ok := extractFieldBytes(r, w, "passphrase")
 	if !ok || len(pass) == 0 {
 		h.enc(w, RouteRotateSalt, http.StatusBadRequest, errData("passphrase required"))
 		return
@@ -273,6 +274,7 @@ func (h *handler) backup(w http.ResponseWriter, r *http.Request) {
 	filename := fmt.Sprintf("keeper-backup-%s.db", time.Now().Format("20060102-150405"))
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	noStore(w)
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := h.store.Backup(w); err != nil {
@@ -302,7 +304,8 @@ func noStore(w http.ResponseWriter) {
 // zero via wipeBytes — that part is correct.
 //
 // Returns (nil, false) on any parse error or absent field.
-func extractFieldBytes(r *http.Request, field string) ([]byte, bool) {
+func extractFieldBytes(r *http.Request, w http.ResponseWriter, field string) ([]byte, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	var raw map[string]json.RawMessage
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		return nil, false
@@ -330,11 +333,10 @@ func decodeB64Loose(s string) ([]byte, error) {
 	return data, err
 }
 
-// wipeBytes zeros a byte slice in place.
+// wipeBytes zeros a byte slice in place using zero.Bytes to prevent the
+// compiler from eliding the zeroing operation as a dead store.
 func wipeBytes(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
+	zero.Bytes(b)
 }
 
 // maxUploadBytes is the maximum accepted multipart file size (4 MiB).
