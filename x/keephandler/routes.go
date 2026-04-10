@@ -20,8 +20,7 @@ import (
 //
 // Body: {"passphrase":"..."}
 func (h *handler) unlock(w http.ResponseWriter, r *http.Request) {
-	if h.store == nil {
-		h.enc(w, RouteUnlock, http.StatusServiceUnavailable, errData("keeper not configured"))
+	if !h.guardUnlock(w, r, RouteUnlock) {
 		return
 	}
 
@@ -42,8 +41,7 @@ func (h *handler) unlock(w http.ResponseWriter, r *http.Request) {
 
 // lock handles POST /keeper/lock.
 func (h *handler) lock(w http.ResponseWriter, r *http.Request) {
-	if h.store == nil {
-		h.enc(w, RouteLock, http.StatusServiceUnavailable, errData("keeper not configured"))
+	if !h.guardUnlock(w, r, RouteLock) {
 		return
 	}
 	if err := h.store.Lock(); err != nil {

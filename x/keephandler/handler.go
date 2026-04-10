@@ -87,6 +87,20 @@ func (h *handler) guardRequest(w http.ResponseWriter, r *http.Request, route str
 	return true
 }
 
+// guardUnlock is like guardRequest but omits the IsLocked check.
+// It is used by the unlock and lock handlers, which must be callable
+// regardless of store state, while still honouring the configured GuardFunc.
+func (h *handler) guardUnlock(w http.ResponseWriter, r *http.Request, route string) bool {
+	if h.store == nil {
+		h.enc(w, route, http.StatusServiceUnavailable, errData("keeper not configured"))
+		return false
+	}
+	if h.guard != nil {
+		return h.guard(w, r, route)
+	}
+	return true
+}
+
 // hookWrap
 
 // hookWrap wraps fn with the lifecycle functions in hook.
