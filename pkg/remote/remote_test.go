@@ -182,7 +182,9 @@ func TestResponseSizeLimitExceeded(t *testing.T) {
 	// Build 96 KiB of random bytes and base64-encode them so the JSON response
 	// body well exceeds the 64 KiB cap.
 	oversizedPayload := make([]byte, 96*1024)
-	rand.Read(oversizedPayload) //nolint:errcheck // rand.Read from crypto/rand never fails on supported platforms
+	if _, err := rand.Read(oversizedPayload); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
 	encoded := base64.StdEncoding.EncodeToString(oversizedPayload)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
