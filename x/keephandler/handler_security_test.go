@@ -266,3 +266,51 @@ func TestGet_ResponseHasKeyField(t *testing.T) {
 		t.Error("value field should be non-empty")
 	}
 }
+
+// TestGuardFuncAppliesToLockAndUnlock verifies that the GuardFunc configured
+// via WithGuard is enforced on both /unlock and /lock endpoints — previously
+// these handlers bypassed the guard entirely.
+func TestGuardFuncAppliesToLockAndUnlock(t *testing.T) {
+	// Guard that always denies with 403.
+	blockingGuard := func(w http.ResponseWriter, r *http.Request, route string) bool {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"error":"forbidden"}`)) //nolint:errcheck
+		return false
+	}
+
+	// newLockedServer creates a store that has a verification hash set, so
+	// unlock with the right passphrase would actually succeed if not guarded.
+	srv := newLockedServer(t, WithGuard(blockingGuard))
+	defer srv.Close()
+
+	// POST /keeper/unlock must be blocked by the guard.
+	resp := do(t, srv, "POST", "/keeper/unlock", `{"passphrase":"anything"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("unlock with blocking guard: want 403, got %d", resp.StatusCode)
+	}
+
+	// POST /keeper/lock must also be blocked by the guard.
+	resp = do(t, srv, "POST", "/keeper/lock", "")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("lock with blocking guard: want 403, got %d", resp.StatusCode)
+	}
+
+	// Verify that without a guard, unlock and lock work normally.
+	srv2 := newLockedServer(t)
+	defer srv2.Close()
+
+	resp = do(t, srv2, "POST", "/keeper/unlock", `{"passphrase":"testpass"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("unlock without guard: want 200, got %d", resp.StatusCode)
+	}
+
+	resp = do(t, srv2, "POST", "/keeper/lock", "")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("lock without guard: want 200, got %d", resp.StatusCode)
+	}
+}
