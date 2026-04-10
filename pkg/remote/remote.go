@@ -88,6 +88,9 @@ const (
 	defaultRetryCount     = 3
 	defaultRetryBackoff   = 500 * time.Millisecond
 	maxBackoffMultiplier  = 8
+	// maxResponseBodyBytes caps the number of bytes read from a KMS response
+	// to prevent unbounded memory consumption from a rogue or misconfigured service.
+	maxResponseBodyBytes = 64 * 1024
 )
 
 // Provider implements keeper.HSMProvider by delegating to a remote KMS service.
@@ -152,12 +155,13 @@ func New(cfg Config) (*Provider, error) {
 
 // WrapDEK base64-encodes dek, sends it to the configured wrap endpoint, and
 // returns the base64-decoded ciphertext from the response.
-func (p *Provider) WrapDEK(dek []byte) ([]byte, error) {
+// ctx is used for request cancellation and deadline propagation.
+func (p *Provider) WrapDEK(ctx context.Context, dek []byte) ([]byte, error) {
 	body, err := p.buildRequest(dek, p.cfg.WrapRequestTemplate, "DEK")
 	if err != nil {
 		return nil, fmt.Errorf("remote: wrap request build failed: %w", err)
 	}
-	resp, err := p.doWithRetry(p.cfg.URL, body)
+	resp, err := p.doWithRetry(ctx, p.cfg.URL, body)
 	if err != nil {
 		return nil, fmt.Errorf("remote: wrap request failed: %w", err)
 	}
@@ -167,7 +171,8 @@ func (p *Provider) WrapDEK(dek []byte) ([]byte, error) {
 // UnwrapDEK base64-encodes wrapped, sends it to the configured unwrap endpoint,
 // and returns the decoded plaintext DEK bytes. The plaintext DEK must not be
 // logged or stored beyond the immediate caller's stack frame.
-func (p *Provider) UnwrapDEK(wrapped []byte) ([]byte, error) {
+// ctx is used for request cancellation and deadline propagation.
+func (p *Provider) UnwrapDEK(ctx context.Context, wrapped []byte) ([]byte, error) {
 	body, err := p.buildRequest(wrapped, p.cfg.UnwrapRequestTemplate, "Wrapped")
 	if err != nil {
 		return nil, fmt.Errorf("remote: unwrap request build failed: %w", err)
@@ -176,7 +181,7 @@ func (p *Provider) UnwrapDEK(wrapped []byte) ([]byte, error) {
 	if p.cfg.UnwrapURL != "" {
 		target = p.cfg.UnwrapURL
 	}
-	resp, err := p.doWithRetry(target, body)
+	resp, err := p.doWithRetry(ctx, target, body)
 	if err != nil {
 		return nil, fmt.Errorf("remote: unwrap request failed: %w", err)
 	}
@@ -223,18 +228,23 @@ func (p *Provider) buildRequest(payload []byte, tmpl, fieldName string) ([]byte,
 
 // doWithRetry executes the configured HTTP method against url with body,
 // retrying on network errors or 5xx responses up to cfg.RetryCount times.
-func (p *Provider) doWithRetry(url string, body []byte) ([]byte, error) {
+// ctx is threaded through to each attempt for cancellation support.
+func (p *Provider) doWithRetry(ctx context.Context, url string, body []byte) ([]byte, error) {
 	var lastErr error
 	backoff := p.cfg.RetryBackoff
 	for attempt := 0; attempt <= p.cfg.RetryCount; attempt++ {
 		if attempt > 0 {
-			time.Sleep(backoff)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
 			backoff *= 2
 			if backoff > time.Duration(maxBackoffMultiplier)*p.cfg.RetryBackoff {
 				backoff = time.Duration(maxBackoffMultiplier) * p.cfg.RetryBackoff
 			}
 		}
-		resp, err := p.executeOnce(url, body)
+		resp, err := p.executeOnce(ctx, url, body)
 		if err != nil {
 			lastErr = err
 			continue
@@ -245,8 +255,10 @@ func (p *Provider) doWithRetry(url string, body []byte) ([]byte, error) {
 }
 
 // executeOnce performs a single HTTP request and reads the response body.
-func (p *Provider) executeOnce(url string, body []byte) ([]byte, error) {
-	req, err := http.NewRequest(p.cfg.Method, url, bytes.NewReader(body))
+// The response body is capped at maxResponseBodyBytes to prevent unbounded
+// memory consumption from a rogue or misconfigured KMS.
+func (p *Provider) executeOnce(ctx context.Context, url string, body []byte) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, p.cfg.Method, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("request build: %w", err)
 	}
@@ -264,7 +276,7 @@ func (p *Provider) executeOnce(url string, body []byte) ([]byte, error) {
 	if !p.isSuccess(resp.StatusCode) {
 		return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, url)
 	}
-	return io.ReadAll(resp.Body)
+	return io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes))
 }
 
 // extractBase64 extracts a field from a JSON response body using a dot-separated

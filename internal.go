@@ -395,7 +395,7 @@ func (s *Keeper) unlockBucketHSM(scheme, namespace string) error {
 	if !ok {
 		return fmt.Errorf("bucket %s:%s has no wrapped DEK", scheme, namespace)
 	}
-	dekBytes, err := policy.HSMProvider.UnwrapDEK(wrapped)
+	dekBytes, err := policy.HSMProvider.UnwrapDEK(context.Background(), wrapped)
 	if err != nil {
 		return fmt.Errorf("HSM unwrap failed for %s:%s: %w", scheme, namespace, err)
 	}

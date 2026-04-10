@@ -264,7 +264,7 @@ func (s *Keeper) CreateBucket(scheme, namespace string, level SecurityLevel, cre
 		copy(dekBytes, dekBuf.Bytes())
 		dekBuf.Destroy()
 
-		wrapped, err := policy.HSMProvider.WrapDEK(dekBytes)
+		wrapped, err := policy.HSMProvider.WrapDEK(context.Background(), dekBytes)
 		zero.Bytes(dekBytes)
 		if err != nil {
 			return fmt.Errorf("HSM wrap failed: %w", err)

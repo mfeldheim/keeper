@@ -37,7 +37,8 @@ func NewSoftHSM() (*SoftHSM, error) {
 
 // WrapDEK encrypts dek with the internal wrapping key using XChaCha20-Poly1305.
 // The returned bytes are [24-byte nonce || ciphertext || 16-byte tag].
-func (h *SoftHSM) WrapDEK(dek []byte) ([]byte, error) {
+// ctx is accepted for interface compatibility but is not used by this in-process provider.
+func (h *SoftHSM) WrapDEK(_ context.Context, dek []byte) ([]byte, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	buf, err := h.wrappingKey.Open()
@@ -59,7 +60,8 @@ func (h *SoftHSM) WrapDEK(dek []byte) ([]byte, error) {
 
 // UnwrapDEK decrypts a wrapped DEK produced by WrapDEK.
 // Returns an error if authentication fails or the data is malformed.
-func (h *SoftHSM) UnwrapDEK(wrapped []byte) ([]byte, error) {
+// ctx is accepted for interface compatibility but is not used by this in-process provider.
+func (h *SoftHSM) UnwrapDEK(_ context.Context, wrapped []byte) ([]byte, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	buf, err := h.wrappingKey.Open()
