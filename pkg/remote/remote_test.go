@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"math/rand"
+	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -129,9 +129,15 @@ func TestProvider_Ping(t *testing.T) {
 // The fake KMS sleeps for 5 seconds; the context has a 200ms deadline.
 // The call must return an error well before the 5-second server delay.
 func TestContextCancellation(t *testing.T) {
+	done := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Simulate a slow/hung KMS.
-		time.Sleep(5 * time.Second)
+		// Simulate a slow/hung KMS. The done channel unblocks the handler
+		// after the test finishes so httptest.Server.Close does not stall.
+		select {
+		case <-time.After(5 * time.Second):
+		case <-done:
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(srv.Close)
@@ -163,6 +169,8 @@ func TestContextCancellation(t *testing.T) {
 	if elapsed > 500*time.Millisecond {
 		t.Fatalf("WrapDEK took %v; expected cancellation within 500ms", elapsed)
 	}
+	// Unblock the server handler so t.Cleanup(srv.Close) returns promptly.
+	close(done)
 }
 
 // TestResponseSizeLimitExceeded verifies that an oversized KMS response is handled
@@ -174,7 +182,7 @@ func TestResponseSizeLimitExceeded(t *testing.T) {
 	// Build 96 KiB of random bytes and base64-encode them so the JSON response
 	// body well exceeds the 64 KiB cap.
 	oversizedPayload := make([]byte, 96*1024)
-	rand.Read(oversizedPayload) //nolint:gosec // test randomness, not cryptographic
+	rand.Read(oversizedPayload) //nolint:errcheck // rand.Read from crypto/rand never fails on supported platforms
 	encoded := base64.StdEncoding.EncodeToString(oversizedPayload)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

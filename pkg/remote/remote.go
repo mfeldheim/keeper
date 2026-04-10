@@ -88,6 +88,9 @@ const (
 	defaultRetryCount     = 3
 	defaultRetryBackoff   = 500 * time.Millisecond
 	maxBackoffMultiplier  = 8
+	// maxResponseBodyBytes caps the number of bytes read from a KMS response
+	// to prevent unbounded memory consumption from a rogue or misconfigured service.
+	maxResponseBodyBytes = 64 * 1024
 )
 
 // Provider implements keeper.HSMProvider by delegating to a remote KMS service.
@@ -252,8 +255,8 @@ func (p *Provider) doWithRetry(ctx context.Context, url string, body []byte) ([]
 }
 
 // executeOnce performs a single HTTP request and reads the response body.
-// The response body is capped at 64 KiB to prevent unbounded memory consumption
-// from a rogue or misconfigured KMS.
+// The response body is capped at maxResponseBodyBytes to prevent unbounded
+// memory consumption from a rogue or misconfigured KMS.
 func (p *Provider) executeOnce(ctx context.Context, url string, body []byte) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, p.cfg.Method, url, bytes.NewReader(body))
 	if err != nil {
@@ -273,7 +276,7 @@ func (p *Provider) executeOnce(ctx context.Context, url string, body []byte) ([]
 	if !p.isSuccess(resp.StatusCode) {
 		return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, url)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	return io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes))
 }
 
 // extractBase64 extracts a field from a JSON response body using a dot-separated
