@@ -71,8 +71,8 @@ type SchemeHandler interface {
 // Implementations must be safe for concurrent use from multiple goroutines.
 // Ping is used by the jack.Doctor health patient to verify provider liveness.
 type HSMProvider interface {
-	WrapDEK(dek []byte) ([]byte, error)
-	UnwrapDEK(wrapped []byte) ([]byte, error)
+	WrapDEK(ctx context.Context, dek []byte) ([]byte, error)
+	UnwrapDEK(ctx context.Context, wrapped []byte) ([]byte, error)
 	Ping(ctx context.Context) error
 }
 

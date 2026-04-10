@@ -15,11 +15,11 @@ func TestSoftHSM_RoundTrip(t *testing.T) {
 	for i := range dek {
 		dek[i] = byte(i)
 	}
-	wrapped, err := h.WrapDEK(dek)
+	wrapped, err := h.WrapDEK(context.Background(), dek)
 	if err != nil {
 		t.Fatalf("WrapDEK: %v", err)
 	}
-	got, err := h.UnwrapDEK(wrapped)
+	got, err := h.UnwrapDEK(context.Background(), wrapped)
 	if err != nil {
 		t.Fatalf("UnwrapDEK: %v", err)
 	}
@@ -34,8 +34,8 @@ func TestSoftHSM_NonceUnique(t *testing.T) {
 		t.Fatalf("NewSoftHSM: %v", err)
 	}
 	dek := make([]byte, 32)
-	w1, _ := h.WrapDEK(dek)
-	w2, _ := h.WrapDEK(dek)
+	w1, _ := h.WrapDEK(context.Background(), dek)
+	w2, _ := h.WrapDEK(context.Background(), dek)
 	if bytes.Equal(w1, w2) {
 		t.Fatal("expected distinct ciphertexts for two WrapDEK calls (nonce reuse detected)")
 	}
@@ -57,9 +57,9 @@ func TestSoftHSM_TamperedCiphertext(t *testing.T) {
 		t.Fatalf("NewSoftHSM: %v", err)
 	}
 	dek := make([]byte, 32)
-	wrapped, _ := h.WrapDEK(dek)
+	wrapped, _ := h.WrapDEK(context.Background(), dek)
 	wrapped[len(wrapped)-1] ^= 0xFF
-	if _, err := h.UnwrapDEK(wrapped); err == nil {
+	if _, err := h.UnwrapDEK(context.Background(), wrapped); err == nil {
 		t.Fatal("expected error for tampered ciphertext")
 	}
 }
