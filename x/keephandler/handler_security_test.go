@@ -266,3 +266,47 @@ func TestGet_ResponseHasKeyField(t *testing.T) {
 		t.Error("value field should be non-empty")
 	}
 }
+
+// Cache-Control on backup
+
+// TestBackupSetsNoStore verifies that GET /keeper/backup responds with
+// Cache-Control: no-store so the raw database file is never cached by proxies.
+func TestBackupSetsNoStore(t *testing.T) {
+	client, base, _ := newTestServerWithBucket(t)
+
+	req, _ := http.NewRequest("GET", base+"/keeper/backup", nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("backup: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+	assertNoStore(t, resp, "GET /backup")
+}
+
+// Request body size limit
+
+// TestUnlockBodySizeLimit verifies that POST /keeper/unlock rejects request
+// bodies larger than 4096 bytes with a 4xx status rather than hanging or 500.
+func TestUnlockBodySizeLimit(t *testing.T) {
+	srv := newLockedServer(t)
+	defer srv.Close()
+
+	// Build a JSON body where the passphrase field is >> 4096 bytes.
+	large := `{"passphrase":"` + strings.Repeat("x", 5000) + `"}`
+	req, _ := http.NewRequest("POST", srv.URL+"/keeper/unlock", strings.NewReader(large))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("unlock oversized body: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 400 || resp.StatusCode >= 500 {
+		t.Errorf("want 4xx for oversized body, got %d", resp.StatusCode)
+	}
+}
