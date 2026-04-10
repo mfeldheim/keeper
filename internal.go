@@ -168,10 +168,10 @@ func deriveMetadataKeys(masterKey []byte, cfg Config) (policyEncKey, auditEncKey
 // Policy bucket key helpers
 
 // policyBaseKey returns the opaque on-disk key for a scheme:namespace pair.
-// SHA-256("scheme:namespace")[:16] encoded as 32 hex chars = 128-bit key space.
+// Full SHA-256("scheme:namespace") encoded as 64 hex chars = 256-bit key space.
 func policyBaseKey(scheme, namespace string) string {
 	h := sha256.Sum256([]byte(scheme + ":" + namespace))
-	return hex.EncodeToString(h[:16])
+	return hex.EncodeToString(h[:])
 }
 
 func policyHashKey(base string) string { return base + policyHashSuffix }
@@ -1049,7 +1049,7 @@ func policyHashIntegrity(data []byte) string {
 // savePolicy persists a policy with both a SHA-256 hash and, when the store
 // is unlocked (policyKey set), an authenticated HMAC tag. All three entries
 // are written in one atomic bbolt.Update — no partial state is possible.
-// The on-disk key is policyBaseKey(scheme, namespace) — an opaque 32-hex-char
+// The on-disk key is policyBaseKey(scheme, namespace) — an opaque 64-hex-char
 // hash that hides the bucket structure from offline readers.
 func (s *Keeper) savePolicy(policy *BucketSecurityPolicy) error {
 	return s.db.Update(func(tx pkgstore.Tx) error {

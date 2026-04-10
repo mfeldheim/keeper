@@ -499,3 +499,35 @@ func TestMigration_ConfigurableBatchSize(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// TestPolicyBaseKey_FullSHA256 verifies that policyBaseKey produces a 64-character
+// hex string (full SHA-256, 256 bits) rather than the old truncated 32-character
+// form (128 bits). This ensures birthday collision resistance of 2^128 is preserved.
+func TestPolicyBaseKey_FullSHA256(t *testing.T) {
+	const wantLen = 64 // hex(SHA-256) = 32 bytes * 2 hex chars/byte
+
+	tests := []struct{ scheme, namespace string }{
+		{"myapp", "users"},
+		{"", ""},
+		{"a", "b"},
+		{"scheme-with-dashes", "namespace/with/slashes"},
+	}
+	for _, tc := range tests {
+		got := policyBaseKey(tc.scheme, tc.namespace)
+		if len(got) != wantLen {
+			t.Errorf("policyBaseKey(%q, %q) = %q (len %d), want len %d (full SHA-256 hex)",
+				tc.scheme, tc.namespace, got, len(got), wantLen)
+		}
+	}
+}
+
+// TestPolicyBaseKey_Distinct verifies that distinct scheme:namespace pairs produce
+// distinct keys (basic collision sanity check).
+func TestPolicyBaseKey_Distinct(t *testing.T) {
+	k1 := policyBaseKey("app", "ns1")
+	k2 := policyBaseKey("app", "ns2")
+	k3 := policyBaseKey("other", "ns1")
+	if k1 == k2 || k1 == k3 || k2 == k3 {
+		t.Errorf("policyBaseKey produced collisions: %q %q %q", k1, k2, k3)
+	}
+}
